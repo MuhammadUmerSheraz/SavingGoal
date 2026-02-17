@@ -13,6 +13,9 @@ Thumbs.db
 *.log
 npm-debug.log*
 
-# Optional: uncomment if you use a local env file for Firebase
+# Firebase (contains secrets – use firebase-config.example.js as template)
+firebase-config.js
+
+# Optional: local env files
 # .env
 # .env.local

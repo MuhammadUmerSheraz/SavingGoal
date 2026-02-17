@@ -46,10 +46,16 @@ body {
   margin-bottom: 2.5rem;
 }
 
-.btn-sign-out {
+.header-actions {
   position: absolute;
   top: 0;
   right: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-sign-out {
   padding: 0.5rem 1rem;
   font-size: 0.85rem;
   background: transparent;
@@ -64,6 +70,29 @@ body {
 .btn-sign-out:hover {
   color: var(--text);
   border-color: var(--text-muted);
+}
+
+.btn-delete-account {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-family: inherit;
+  border-radius: var(--radius-sm);
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.btn-delete-account:hover {
+  color: var(--debit);
+  border-color: var(--debit);
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.btn-delete-account:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Auth section – sign in / sign up */
@@ -297,6 +326,16 @@ body {
 }
 
 /* Create goal form */
+.main-app-error {
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  color: var(--text);
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  border-radius: var(--radius-sm);
+}
+
 .create-goal {
   margin-bottom: 2rem;
 }

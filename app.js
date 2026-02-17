@@ -21,6 +21,40 @@ function formatCurrency(amount) {
   }).format(amount);
 }
 
+function formatAmountInput(value) {
+  const raw = String(value).replace(/,/g, '').trim();
+  if (raw === '' || raw === '.') return '';
+  const n = parseFloat(raw);
+  if (!Number.isFinite(n) || n < 0) return '';
+  return new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
+
+function parseAmountInput(value) {
+  if (value == null || value === '') return NaN;
+  return parseFloat(String(value).replace(/,/g, '')) || NaN;
+}
+
+function allowOnlyNumbersAndFormat(inputEl) {
+  if (!inputEl) return;
+  inputEl.addEventListener('input', function () {
+    let v = this.value.replace(/,/g, '');
+    const endsWithDot = v.endsWith('.');
+    const hasDecimal = /\./.test(v);
+    v = v.replace(/[^\d.]/g, '');
+    if (hasDecimal) {
+      const parts = v.split('.');
+      if (parts.length > 2) v = parts[0] + '.' + parts.slice(1).join('');
+      if (parts[1] && parts[1].length > 2) v = parts[0] + '.' + parts[1].slice(0, 2);
+    }
+    let out = formatAmountInput(v || '');
+    if (endsWithDot && v && !out.endsWith('.')) out += '.';
+    this.value = out;
+  });
+}
+
 function formatDate(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -238,9 +272,10 @@ function renderGoals(goals) {
     const btnCancelGoal = article.querySelector('.btn-cancel-goal');
 
     if (btnEditGoal && goalEdit && goalInfo) {
+      if (goalEditAmount) allowOnlyNumbersAndFormat(goalEditAmount);
       btnEditGoal.addEventListener('click', () => {
         goalEditName.value = goal.name || '';
-        goalEditAmount.value = goal.amount ?? '';
+        goalEditAmount.value = formatAmountInput(goal.amount ?? '');
         goalEditEnddate.value = goal.endDate || '';
         goalInfo.style.display = 'none';
         goalEdit.style.display = 'block';
@@ -252,7 +287,7 @@ function renderGoals(goals) {
       });
       btnSaveGoal.addEventListener('click', () => {
         const name = goalEditName.value.trim();
-        const amount = parseFloat(goalEditAmount.value);
+        const amount = parseAmountInput(goalEditAmount.value);
         const endDate = goalEditEnddate.value;
         if (!name) return;
         if (!Number.isFinite(amount) || amount < 0) return;
@@ -285,11 +320,37 @@ function showMessage(msg) {
   if (el) el.textContent = msg || '';
 }
 
+function showMainError(msg) {
+  const el = document.getElementById('main-app-error');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.display = msg ? 'block' : 'none';
+}
+
+function getAuthErrorMessage(code, defaultMsg) {
+  const messages = {
+    'auth/invalid-credential': 'Wrong email or password. Try again or create a new account.',
+    'auth/invalid-email': 'Please enter a valid email address.',
+    'auth/user-not-found': 'No account with this email. You can create one by clicking Continue.',
+    'auth/wrong-password': 'Wrong password. Try again.',
+    'auth/email-already-in-use': 'This email is already in use. Sign in instead.',
+    'auth/weak-password': 'Password should be at least 6 characters.',
+    'auth/too-many-requests': 'Too many attempts. Please try again later.',
+    'auth/network-request-failed': 'Network error. Check your connection and try again.',
+  };
+  return messages[code] || defaultMsg || 'Something went wrong. Please try again.';
+}
+
 function initUI() {
+  const goalAmountInput = document.getElementById('goal-amount');
+  if (goalAmountInput) {
+    allowOnlyNumbersAndFormat(goalAmountInput);
+  }
+
   document.getElementById('goal-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const name = document.getElementById('goal-name').value.trim();
-    const amount = parseFloat(document.getElementById('goal-amount').value);
+    const amount = parseAmountInput(document.getElementById('goal-amount').value);
     const endDate = document.getElementById('goal-end-date').value;
     if (!name || !Number.isFinite(amount) || amount < 0 || !endDate) return;
 
@@ -309,16 +370,29 @@ function initUI() {
 function showApp(show) {
   const main = document.getElementById('main-app');
   const authSection = document.getElementById('auth-section');
-  const signOutBtn = document.getElementById('btn-sign-out');
+  const headerActions = document.getElementById('header-actions');
   if (main) main.style.display = show ? 'block' : 'none';
   if (authSection) authSection.style.display = show ? 'none' : 'block';
-  if (signOutBtn) signOutBtn.style.display = show ? 'inline-block' : 'none';
+  if (headerActions) headerActions.style.display = show ? 'flex' : 'none';
+}
+
+function clearAuthForm() {
+  const emailEl = document.getElementById('auth-email');
+  const passwordEl = document.getElementById('auth-password');
+  const btnAuth = document.getElementById('btn-auth');
+  if (emailEl) emailEl.value = '';
+  if (passwordEl) passwordEl.value = '';
+  if (btnAuth) {
+    btnAuth.disabled = false;
+    btnAuth.textContent = 'Continue';
+  }
+  showMessage('');
 }
 
 function startWithFirebase() {
   const authSection = document.getElementById('auth-section');
   const authForm = document.getElementById('auth-form');
-  const btnCreate = document.getElementById('btn-create-account');
+  const btnAuth = document.getElementById('btn-auth');
   const btnSignOut = document.getElementById('btn-sign-out');
 
   const firebaseAuth = getAuth();
@@ -328,28 +402,43 @@ function startWithFirebase() {
     return;
   }
 
+  let unsubscribeGoals = null;
+
   firebaseAuth.onAuthStateChanged((user) => {
     if (user) {
+      if (unsubscribeGoals) unsubscribeGoals();
+      unsubscribeGoals = null;
       showApp(true);
       showMessage('');
+      showMainError('');
       const uid = user.uid;
-      getDb()
+      unsubscribeGoals = getDb()
         .collection('users')
         .doc(uid)
         .onSnapshot(
           (snap) => {
+            showMainError('');
             const data = snap.data();
             state.goals = (data && data.goals) || [];
             renderGoals(state.goals);
           },
           (err) => {
+            if (!getAuth().currentUser) return;
             console.error('Firestore error:', err);
-            showMessage('Could not load goals.');
+            const msg = 'Could not load goals. In Firebase Console → Firestore → Rules, publish the rules from firestore.rules (see README).';
+            showMessage(msg);
+            showMainError(msg);
           }
         );
     } else {
+      if (unsubscribeGoals) {
+        unsubscribeGoals();
+        unsubscribeGoals = null;
+      }
       state.goals = [];
       renderGoals(state.goals);
+      clearAuthForm();
+      showMainError('');
       showApp(false);
     }
   });
@@ -358,53 +447,91 @@ function startWithFirebase() {
     e.preventDefault();
     const email = document.getElementById('auth-email').value.trim();
     const password = document.getElementById('auth-password').value;
-    if (!email || !password) return;
+    if (!email || !password) {
+      showMessage('Enter email and password (min 6 characters)');
+      return;
+    }
+    if (password.length < 6) {
+      showMessage('Password must be at least 6 characters');
+      return;
+    }
     showMessage('');
+    if (btnAuth) {
+      btnAuth.disabled = true;
+      btnAuth.textContent = 'Please wait…';
+    }
+    function tryCreateAccount() {
+      firebaseAuth
+        .createUserWithEmailAndPassword(email, password)
+        .then(() => {})
+        .catch((createErr) => {
+          if (createErr.code === 'auth/email-already-in-use') {
+            showMessage('Wrong email or password. Try again.');
+          } else {
+            showMessage(getAuthErrorMessage(createErr.code, createErr.message));
+          }
+          if (btnAuth) {
+            btnAuth.disabled = false;
+            btnAuth.textContent = 'Continue';
+          }
+        });
+    }
+
     firebaseAuth
       .signInWithEmailAndPassword(email, password)
       .then(() => {})
       .catch((err) => {
-        showMessage(err.message || 'Sign in failed');
+        if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+          tryCreateAccount();
+        } else {
+          showMessage(getAuthErrorMessage(err.code, err.message));
+          if (btnAuth) {
+            btnAuth.disabled = false;
+            btnAuth.textContent = 'Continue';
+          }
+        }
       });
   });
 
-  if (btnCreate) {
-    btnCreate.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const emailInput = document.getElementById('auth-email');
-      const passwordInput = document.getElementById('auth-password');
-      const email = emailInput ? emailInput.value.trim() : '';
-      const password = passwordInput ? passwordInput.value : '';
-      if (!email || !password) {
-        showMessage('Enter email and password (min 6 characters)');
-        return;
-      }
-      if (password.length < 6) {
-        showMessage('Password must be at least 6 characters');
-        return;
-      }
-      showMessage('');
-      btnCreate.disabled = true;
-      btnCreate.textContent = 'Creating…';
-      firebaseAuth
-        .createUserWithEmailAndPassword(email, password)
-        .then(() => {})
-        .catch((err) => {
-          showMessage(err.message || 'Create account failed');
-          btnCreate.disabled = false;
-          btnCreate.textContent = 'Create an account';
-        })
-        .finally(() => {
-          btnCreate.disabled = false;
-          btnCreate.textContent = 'Create an account';
-        });
+  if (btnSignOut) {
+    btnSignOut.addEventListener('click', () => {
+      firebaseAuth.signOut();
     });
   }
 
-  btnSignOut.addEventListener('click', () => {
-    firebaseAuth.signOut();
-  });
+  const btnDeleteAccount = document.getElementById('btn-delete-account');
+  if (btnDeleteAccount) {
+    btnDeleteAccount.addEventListener('click', () => {
+      const msg = 'Permanently delete your account and all your goals? This cannot be undone.';
+      if (!confirm(msg)) return;
+      const user = firebaseAuth.currentUser;
+      if (!user) return;
+      const uid = user.uid;
+      btnDeleteAccount.disabled = true;
+      btnDeleteAccount.textContent = 'Deleting…';
+      getDb()
+        .collection('users')
+        .doc(uid)
+        .delete()
+        .catch(() => {})
+        .then(() => user.delete())
+        .then(() => {
+          firebaseAuth.signOut();
+          showApp(false);
+        })
+        .catch((err) => {
+          if (err.code === 'auth/requires-recent-login') {
+            alert('For security, please sign out, sign in again, then try Delete account.');
+          } else {
+            alert(err.message || 'Could not delete account.');
+          }
+        })
+        .finally(() => {
+          btnDeleteAccount.disabled = false;
+          btnDeleteAccount.textContent = 'Delete account';
+        });
+    });
+  }
 
   initUI();
 }

@@ -28,9 +28,25 @@ Then open http://localhost:8000 (or the path to `index.html`).
 3. Open `firebase-config.js` and replace the placeholder values with your config:
    - `apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId`, `appId`
 4. **Authentication**: In Firebase Console → Authentication → Sign-in method, enable **Email/Password**.
-5. **Firestore**: Create a Firestore Database. In **Rules**, paste the contents of `firestore.rules` (or use the Rules tab in the console):
-   - Users can only read/write their own document under `users/{userId}`.
-6. Reload the app. You’ll see a **Sign in** form. Use **Create account** to register, then **Sign in** on any device with the same email/password to access your goals.
+5. **Firestore** (required to fix "Missing or insufficient permissions"):
+   - Create a Firestore Database if you haven’t (choose a location, start in **production mode**).
+   - Open **Firestore Database** → **Rules** tab.
+   - Replace all rules with the contents of the project’s `firestore.rules` file (see below).
+   - Click **Publish**. Without this, the app cannot read/write goals.
+6. Reload the app. Use **Continue** to sign in or create an account; your goals sync to Firestore.
+
+**If you see "Missing or insufficient permissions"**: Firestore is blocking access. In [Firebase Console](https://console.firebase.google.com/) → your project → **Firestore Database** → **Rules**, paste the rules below and click **Publish**:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+```
 
 Without Firebase, the app still works and saves goals in **localStorage** (this browser only).
 

@@ -1,6 +1,7 @@
 const STORAGE_KEY = 'saving-goals-data';
+const CURRENCY_STORAGE_KEY = 'saving-goal-currency';
 
-const state = { goals: [] };
+const state = { goals: [], currency: 'USD' };
 const getDb = () => window.firebaseDb;
 const getAuth = () => window.firebaseAuth;
 
@@ -8,15 +9,20 @@ function isFirebaseEnabled() {
   return getDb() && getAuth();
 }
 
+function getCurrency() {
+  return state.currency || 'USD';
+}
+
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
 
 function formatCurrency(amount) {
-  return new Intl.NumberFormat('en-US', {
+  const currency = getCurrency();
+  return new Intl.NumberFormat('en-IN', {
     style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
+    currency: currency,
+    minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount);
 }
@@ -35,6 +41,36 @@ function formatAmountInput(value) {
 function parseAmountInput(value) {
   if (value == null || value === '') return NaN;
   return parseFloat(String(value).replace(/,/g, '')) || NaN;
+}
+
+function entrySortKey(entry) {
+  if (entry.createdAt) return entry.createdAt;
+  if (entry.date) return new Date(entry.date).getTime();
+  return 0;
+}
+
+function sortEntries(entries, sortBy) {
+  const list = [...(entries || [])];
+  const key = sortBy || 'date_desc';
+  list.sort((a, b) => {
+    if (key === 'date_desc') return entrySortKey(b) - entrySortKey(a);
+    if (key === 'date_asc') return entrySortKey(a) - entrySortKey(b);
+    if (key === 'amount_desc') return (Number(b.amount) || 0) - (Number(a.amount) || 0);
+    if (key === 'amount_asc') return (Number(a.amount) || 0) - (Number(b.amount) || 0);
+    if (key === 'active_first') return (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0);
+    if (key === 'inactive_first') return (a.is_active ? 1 : 0) - (b.is_active ? 1 : 0);
+    return 0;
+  });
+  return list;
+}
+
+function formatAmountDisplay(amount) {
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n < 0) return '0';
+  return new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(n);
 }
 
 function allowOnlyNumbersAndFormat(inputEl) {
@@ -62,6 +98,16 @@ function formatDate(dateStr) {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+  });
+}
+
+function formatEntryDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
   });
 }
 
@@ -111,6 +157,8 @@ function updateProgressCircle(section, progress) {
     inactiveCircle.style.strokeDasharray = `${inactiveLen} ${CIRCLE_CIRCUMFERENCE}`;
     inactiveCircle.style.strokeDashoffset = `${-activeLen}`;
   }
+  const centerPercent = section.querySelector('.progress-circle-percent');
+  if (centerPercent) centerPercent.textContent = progress.activePercent.toFixed(0) + '%';
   const centerVal = section.querySelector('.progress-circle-value');
   if (centerVal) centerVal.textContent = formatCurrency(progress.target);
   const detail = section.querySelector('.progress-detail');
@@ -173,34 +221,66 @@ function renderGoals(goals) {
     const entriesList = article.querySelector('.entries-list');
     const entryTypeSelect = article.querySelector('.entry-type');
     const entryAmountInput = article.querySelector('.entry-amount');
+    const entryNoteInput = article.querySelector('.entry-note-input');
+    const sortSelect = article.querySelector('.entries-sort');
+
+    goal.entrySort = goal.entrySort || 'date_desc';
+    if (sortSelect) {
+      sortSelect.value = goal.entrySort;
+      sortSelect.addEventListener('change', () => {
+        goal.entrySort = sortSelect.value;
+        saveGoals(state.goals);
+        renderEntries();
+      });
+    }
 
     function renderEntries() {
       entriesList.innerHTML = '';
-      (goal.entries || []).forEach((entry) => {
+      const sorted = sortEntries(goal.entries, goal.entrySort);
+      sorted.forEach((entry) => {
         const li = document.createElement('li');
         li.className = `entry-item ${entry.is_active ? '' : 'inactive'}`;
         const amount = Number(entry.amount) || 0;
         const typeLabel = entry.type === 'credit' ? 'Credit' : 'Debit';
+        const amountFormatted = (entry.type === 'credit' ? '+' : '') + formatCurrency(entry.type === 'debit' ? -amount : amount);
+        const entryDateStr = entry.date ? formatEntryDate(entry.date) : (entry.createdAt ? formatEntryDate(new Date(entry.createdAt).toISOString().slice(0, 10)) : '');
         li.innerHTML = `
           <div class="entry-view">
-            <span class="entry-type-badge ${entry.type}">${typeLabel}</span>
-            <span class="entry-amount ${entry.type}">${entry.type === 'credit' ? '+' : '-'}${formatCurrency(amount)}</span>
-            <div class="entry-actions">
-              <button type="button" class="toggle-active ${entry.is_active ? 'active' : ''}">${entry.is_active ? 'Active' : 'Inactive'}</button>
-              <button type="button" class="btn-edit-entry">Edit</button>
-              <button type="button" class="btn-remove-entry" aria-label="Remove entry">&times;</button>
+            <div class="entry-view-row">
+              <span class="entry-type-badge ${entry.type}">${typeLabel}</span>
+              <span class="entry-amount ${entry.type}">${amountFormatted}</span>
+              <span class="entry-date ${entryDateStr ? '' : 'entry-date-empty'}">${entryDateStr}</span>
+              <div class="entry-actions">
+                <button type="button" class="toggle-active ${entry.is_active ? 'active' : ''}">${entry.is_active ? 'Active' : 'Inactive'}</button>
+                <button type="button" class="btn-edit-entry">Edit</button>
+                <button type="button" class="btn-remove-entry" aria-label="Remove entry">&times;</button>
+              </div>
             </div>
+            <p class="entry-note"></p>
           </div>
           <div class="entry-edit">
-            <select class="edit-entry-type">
-              <option value="credit" ${entry.type === 'credit' ? 'selected' : ''}>Credit</option>
-              <option value="debit" ${entry.type === 'debit' ? 'selected' : ''}>Debit</option>
-            </select>
-            <input type="number" class="entry-edit-amount" value="${amount}" min="0" step="0.01" />
-            <button type="button" class="btn-save-entry">Save</button>
-            <button type="button" class="btn-cancel-edit">Cancel</button>
+            <div class="entry-edit-row entry-edit-row-main">
+              <select class="edit-entry-type">
+                <option value="credit" ${entry.type === 'credit' ? 'selected' : ''}>Credit</option>
+                <option value="debit" ${entry.type === 'debit' ? 'selected' : ''}>Debit</option>
+              </select>
+              <input type="text" class="entry-edit-amount" inputmode="decimal" value="${formatAmountDisplay(amount)}" />
+            </div>
+            <div class="entry-edit-row entry-edit-row-note">
+              <input type="text" class="edit-entry-note" placeholder="Note (optional)" maxlength="200" />
+            </div>
+            <div class="entry-edit-row entry-edit-row-actions">
+              <button type="button" class="btn-save-entry">Save</button>
+              <button type="button" class="btn-cancel-edit">Cancel</button>
+            </div>
           </div>
         `;
+        const noteEl = li.querySelector('.entry-note');
+        if (noteEl) {
+          noteEl.textContent = entry.note || '';
+          noteEl.style.display = (entry.note || '').trim() ? '' : 'none';
+        }
+
         const toggleBtn = li.querySelector('.toggle-active');
         const editBtn = li.querySelector('.btn-edit-entry');
         const removeBtn = li.querySelector('.btn-remove-entry');
@@ -208,6 +288,8 @@ function renderGoals(goals) {
         const cancelBtn = li.querySelector('.btn-cancel-edit');
         const editTypeSelect = li.querySelector('.edit-entry-type');
         const editAmountInput = li.querySelector('.entry-edit-amount');
+        const editNoteInput = li.querySelector('.edit-entry-note');
+        if (editAmountInput) allowOnlyNumbersAndFormat(editAmountInput);
 
         toggleBtn.addEventListener('click', () => {
           entry.is_active = !entry.is_active;
@@ -216,19 +298,22 @@ function renderGoals(goals) {
         });
         editBtn.addEventListener('click', () => {
           li.classList.add('editing');
-          editAmountInput.value = entry.amount;
+          editAmountInput.value = formatAmountDisplay(entry.amount);
           editTypeSelect.value = entry.type;
+          editNoteInput.value = entry.note || '';
           editAmountInput.focus();
         });
         cancelBtn.addEventListener('click', () => {
           li.classList.remove('editing');
         });
         saveBtn.addEventListener('click', () => {
-          const newAmount = parseFloat(editAmountInput.value);
+          const newAmount = parseAmountInput(editAmountInput.value);
           const newType = editTypeSelect.value;
+          const newNote = (editNoteInput.value || '').trim();
           if (Number.isFinite(newAmount) && newAmount >= 0) {
             entry.amount = newAmount;
             entry.type = newType;
+            entry.note = newNote;
             saveGoals(state.goals);
             renderGoals(state.goals);
           }
@@ -244,20 +329,26 @@ function renderGoals(goals) {
 
     renderEntries();
 
+    if (entryAmountInput) allowOnlyNumbersAndFormat(entryAmountInput);
+
     entryForm.addEventListener('submit', (e) => {
       e.preventDefault();
-      const amount = parseFloat(entryAmountInput.value);
+      const amount = parseAmountInput(entryAmountInput.value);
       if (!Number.isFinite(amount) || amount <= 0) return;
       const type = entryTypeSelect.value;
+      const note = (entryNoteInput && entryNoteInput.value) ? entryNoteInput.value.trim() : '';
       goal.entries = goal.entries || [];
-      goal.entries.push({
+      goal.entries.unshift({
         id: generateId(),
         type,
         amount,
         date: new Date().toISOString().slice(0, 10),
+        createdAt: Date.now(),
         is_active: true,
+        note: note || '',
       });
       entryAmountInput.value = '';
+      if (entryNoteInput) entryNoteInput.value = '';
       saveGoals(state.goals);
       renderGoals(state.goals);
     });
@@ -272,7 +363,7 @@ function renderGoals(goals) {
     const btnCancelGoal = article.querySelector('.btn-cancel-goal');
 
     if (btnEditGoal && goalEdit && goalInfo) {
-      if (goalEditAmount) allowOnlyNumbersAndFormat(goalEditAmount);
+        if (goalEditAmount) allowOnlyNumbersAndFormat(goalEditAmount);
       btnEditGoal.addEventListener('click', () => {
         goalEditName.value = goal.name || '';
         goalEditAmount.value = formatAmountInput(goal.amount ?? '');
@@ -360,6 +451,7 @@ function initUI() {
       amount,
       endDate,
       entries: [],
+      entrySort: 'date_desc',
     });
     saveGoals(state.goals);
     document.getElementById('goal-form').reset();
@@ -405,6 +497,8 @@ function startWithFirebase() {
   let unsubscribeGoals = null;
 
   firebaseAuth.onAuthStateChanged((user) => {
+    const emailEl = document.getElementById('manage-trigger-email');
+    if (emailEl) emailEl.textContent = user ? (user.email || 'Signed in') : '';
     if (user) {
       if (unsubscribeGoals) unsubscribeGoals();
       unsubscribeGoals = null;
@@ -493,8 +587,32 @@ function startWithFirebase() {
       });
   });
 
+  const btnManage = document.getElementById('btn-manage');
+  const manageMenu = document.getElementById('manage-menu');
+  if (btnManage && manageMenu) {
+    manageMenu.addEventListener('click', (e) => e.stopPropagation());
+    btnManage.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isOpen = !manageMenu.hidden;
+      manageMenu.hidden = isOpen;
+      btnManage.setAttribute('aria-expanded', !isOpen);
+      if (!isOpen) {
+        document.addEventListener('click', closeManageMenuOnce);
+      } else {
+        document.removeEventListener('click', closeManageMenuOnce);
+      }
+    });
+    function closeManageMenuOnce() {
+      manageMenu.hidden = true;
+      btnManage.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('click', closeManageMenuOnce);
+    }
+  }
+
   if (btnSignOut) {
     btnSignOut.addEventListener('click', () => {
+      if (manageMenu) manageMenu.hidden = true;
+      if (btnManage) btnManage.setAttribute('aria-expanded', 'false');
       firebaseAuth.signOut();
     });
   }
@@ -554,6 +672,23 @@ function startWithLocalStorage() {
 }
 
 function init() {
+  try {
+    const saved = localStorage.getItem(CURRENCY_STORAGE_KEY);
+    if (saved) state.currency = saved;
+  } catch (e) {}
+
+  const currencySelect = document.getElementById('currency-select');
+  if (currencySelect) {
+    currencySelect.value = getCurrency();
+    currencySelect.addEventListener('change', () => {
+      state.currency = currencySelect.value;
+      try {
+        localStorage.setItem(CURRENCY_STORAGE_KEY, state.currency);
+      } catch (e) {}
+      renderGoals(state.goals);
+    });
+  }
+
   if (isFirebaseEnabled()) {
     startWithFirebase();
   } else {

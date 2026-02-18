@@ -160,11 +160,11 @@
             <span class="progress-circle-label">of target</span>
           </div>
         </div>
+        <p class="progress-detail" aria-live="polite"></p>
         <div class="progress-legend">
-          <span class="legend-item legend-active">Active entries <strong class="legend-percent legend-active-percent">0%</strong></span>
-          <span class="legend-item legend-inactive">Inactive entries <strong class="legend-percent legend-inactive-percent">0%</strong></span>
+          <span class="legend-item legend-active">Active <span class="legend-sum legend-active-sum"></span><strong class="legend-percent legend-active-percent">0%</strong></span>
+          <span class="legend-item legend-inactive">Inactive <span class="legend-sum legend-inactive-sum"></span><strong class="legend-percent legend-inactive-percent">0%</strong></span>
         </div>
-        <p class="progress-detail"></p>
       </div>
       <div class="entries-section">
         <div class="entries-section-head">
@@ -194,6 +194,7 @@
             <option value="active_first">Active first</option>
             <option value="inactive_first">Inactive first</option>
           </select>
+          <button type="button" class="btn btn-sm btn-export-entries" title="Export entries as CSV">Export</button>
         </div>
         <ul class="entries-list"></ul>
       </div>

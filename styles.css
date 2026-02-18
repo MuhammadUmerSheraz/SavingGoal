@@ -800,18 +800,24 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 .progress-detail {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text);
+  margin: 0 0 0.75rem;
   text-align: center;
+  font-weight: 500;
 }
 
 .progress-legend {
   display: flex;
   justify-content: center;
   gap: 1rem;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   color: var(--text-muted);
+}
+
+.legend-sum {
+  font-weight: 500;
+  color: var(--text);
 }
 
 .legend-item {
@@ -875,7 +881,33 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 .entries-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   margin-bottom: 0.75rem;
+  flex-wrap: nowrap;
+}
+
+.entries-filter-row .entries-sort {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn-export-entries {
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dim) 100%);
+  color: #fff;
+  border: none;
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(34, 196, 160, 0.3);
+}
+
+.btn-export-entries:hover {
+  filter: brightness(1.1);
+}
+
+.btn-export-entries:active {
+  transform: scale(0.98);
 }
 
 .entry-form {

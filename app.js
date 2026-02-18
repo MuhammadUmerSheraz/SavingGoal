@@ -64,6 +64,46 @@ function sortEntries(entries, sortBy) {
   return list;
 }
 
+function escapeCsvCell(value) {
+  const s = String(value == null ? '' : value);
+  if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function exportEntriesAsCsv(goal) {
+  const entries = sortEntries(goal.entries || [], goal.entrySort || 'date_desc');
+  let activeTotal = 0;
+  let inactiveTotal = 0;
+  const headers = ['Date', 'Type', 'Amount', 'Note', 'Status'];
+  const rows = [headers.map(escapeCsvCell).join(',')];
+  entries.forEach((entry) => {
+    const dateStr = entry.date || (entry.createdAt ? new Date(entry.createdAt).toISOString().slice(0, 10) : '');
+    const dateFormatted = dateStr ? formatEntryDate(dateStr) : '';
+    const type = entry.type === 'credit' ? 'Credit' : 'Debit';
+    const amount = Number(entry.amount) || 0;
+    const value = entry.type === 'credit' ? amount : -amount;
+    if (entry.is_active) activeTotal += value;
+    else inactiveTotal += value;
+    const note = entry.note || '';
+    const status = entry.is_active ? 'Active' : 'Inactive';
+    rows.push([dateFormatted, type, amount, note, status].map(escapeCsvCell).join(','));
+  });
+  const grandTotal = activeTotal + inactiveTotal;
+  rows.push('');
+  rows.push([escapeCsvCell('Active total'), '', activeTotal, '', ''].join(','));
+  rows.push([escapeCsvCell('Inactive total'), '', inactiveTotal, '', ''].join(','));
+  rows.push([escapeCsvCell('Grand total'), '', grandTotal, '', ''].join(','));
+  const csv = rows.join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const name = (goal.name || 'goal').replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').slice(0, 50) || 'entries';
+  const date = new Date().toISOString().slice(0, 10);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `${name}-entries-${date}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 function formatAmountDisplay(amount) {
   const n = Number(amount);
   if (!Number.isFinite(n) || n < 0) return '0';
@@ -162,7 +202,11 @@ function updateProgressCircle(section, progress) {
   const centerVal = section.querySelector('.progress-circle-value');
   if (centerVal) centerVal.textContent = formatCurrency(progress.target);
   const detail = section.querySelector('.progress-detail');
-  if (detail) detail.textContent = progress.activeLabel;
+  if (detail) detail.textContent = 'Grand total: ' + formatCurrency(progress.total);
+  const activeSumEl = section.querySelector('.legend-active-sum');
+  const inactiveSumEl = section.querySelector('.legend-inactive-sum');
+  if (activeSumEl) activeSumEl.textContent = formatCurrency(progress.activeTotal) + ' · ';
+  if (inactiveSumEl) inactiveSumEl.textContent = formatCurrency(progress.inactiveTotal) + ' · ';
   const activePercentEl = section.querySelector('.legend-active-percent');
   const inactivePercentEl = section.querySelector('.legend-inactive-percent');
   if (activePercentEl) activePercentEl.textContent = progress.activePercent.toFixed(1) + '%';
@@ -232,6 +276,11 @@ function renderGoals(goals) {
         saveGoals(state.goals);
         renderEntries();
       });
+    }
+
+    const exportBtn = article.querySelector('.btn-export-entries');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', () => exportEntriesAsCsv(goal));
     }
 
     function renderEntries() {
